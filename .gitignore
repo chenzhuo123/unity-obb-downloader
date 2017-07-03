@@ -1,0 +1,7 @@
+*.unitypackage
+/local.properties
+.gradle
+.idea
+.DS_Store
+/build
+*.iml

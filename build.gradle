@@ -1,0 +1,88 @@
+/*
+*   Gradle file to build the Unity plugin for the Unity OBB Downloader.
+*   Useage: ./gradlew exportPackage
+*/
+buildscript {
+    repositories {
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+    dependencies {
+        classpath "gradle.plugin.com.palantir.gradle.gitversion:gradle-git-version:0.7.3"
+    }
+}
+
+apply plugin: "com.palantir.git-version"
+
+defaultTasks 'exportPackage'
+
+// Project level variables.
+project.ext {
+    sdk_root = System.getProperty("ANDROID_HOME")
+    if (sdk_root == null || sdk_root.isEmpty()) {
+        sdk_root = System.getenv("ANDROID_HOME")
+    }
+    unity_exe = System.getProperty("UNITY_EXE")
+    if (unity_exe == null || unity_exe.isEmpty()) {
+        unity_exe = System.getenv("UNITY_EXE")
+    }
+    if (unity_exe == null || unity_exe.isEmpty()) {
+        unity_exe ='/Applications/Unity/Unity.app/Contents/MacOS/Unity'
+    }
+
+    pluginSource = file('source/plugin').absolutePath
+    pluginBuildDir = file('temp/plugin-build-dir').absolutePath
+    buildPath = file('temp').absolutePath
+    exportPath = file('UnityOBBDownloader.unitypackage').absolutePath
+}
+
+// Build aar from android plugin source files using existing Gradle build file.
+task buildAndroidLibraryAar(type: GradleBuild) {
+    buildFile = 'source/android-library/build.gradle'
+    tasks = ['clean', 'build']
+}
+
+// Move android library aar to temporary build directory.
+task copyAndroidLibraryAar(type: Copy) {
+    from("source/android-library/unity-obb-downloader/build/outputs/aar/")
+    into("${pluginBuildDir}/Assets/Plugins/Android")
+    include('unity-obb-downloader.aar')
+    rename('unity-obb-downloader.aar', "unity-obb-downloader-${gitVersion()}.aar")
+}
+
+copyAndroidLibraryAar.dependsOn(buildAndroidLibraryAar)
+
+// Build unity package using through command line interface.
+// Create new unity project with files in temporary build directory and export files within Assets/UnityOBBDownloader
+// to a unity package.
+// Command line usage and arguments documented at http://docs.unity3d.com/Manual/CommandLineArguments.html.
+task exportPackage() {
+    description = "Creates and exports the Plugin unity package"
+    doLast {
+        exec {
+            executable "${unity_exe}"
+            args "-g.building",
+                 "-batchmode",
+                 "-projectPath", "${pluginBuildDir}",
+                 "-logFile", "temp/unity.log",
+                 "-exportPackage",
+                 "Assets/UnityOBBDownloader",
+                 "Assets/Plugins",
+                 "${exportPath}",
+                 "-quit"
+        }
+    }
+}
+
+task createTempBuildFolder(type: Copy) {
+        from {"${pluginSource}"}
+        into {"${pluginBuildDir}"}
+}
+
+task clearTempBuildFolder(type:Delete) {
+  delete {"${buildPath}"}
+}
+
+exportPackage.dependsOn(createTempBuildFolder, copyAndroidLibraryAar)
+exportPackage.finalizedBy(clearTempBuildFolder)
